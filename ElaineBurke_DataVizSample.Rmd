@@ -1,0 +1,627 @@
+---
+title: "Sample of Data Vizualization Work"
+#author: "by: Elaine Burke"
+output: 
+  html_document:
+    theme: sandstone
+    highlight: tango
+    css: style.css
+---
+
+```{r setup, include=FALSE}
+
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+
+library(tidyverse)
+library(ggplot2)
+library(dplyr)
+library(geojsonio)
+library(broom)
+library(rgeos)
+library(viridis)
+library(hrbrthemes)
+library(reshape2)
+library(ggrepel)
+library(waffle)
+library(plotly)
+library(treemapify)
+
+global_data <- read.csv("death-rate-from-opioid-use.csv")
+us2019deathrates <- read.csv("2019USDrugDeathRates.csv")
+opiodTypes <- read.csv("OpiodTypes.csv")
+drugarresttypes <- read.csv("drugarresttypes.csv")
+drugarrests <- read.csv("drugarrestsovertime.csv")
+ma.data <- (read.csv("Wide_Master.csv"))
+prescriber.info <- read.csv("prescriber-info.csv")
+DistributionByAge <- drop_na(read.csv("DistributionByAge.csv"))
+urbanizationopioid <- read.csv("urbanizationopioid.csv")
+
+
+spdf <- geojson_read("us_states_hexgrid.geojson.json",  what = "sp")
+
+```
+#### Created for:  AS.470.673.81
+#### Submitted by: Elaine Burke
+#### May 2021
+
+***
+Examining the Opioid Epidemic
+=====================================
+#### Access to relevant, timely and accurate data is needed to to understand the scope of the opioid epidemic, guide policy recommendations, and assess the impact of interventions. In my final portfolio, I examine the opioid epidemic through several lenses: death rates both here and abroad, how different demographics are impacted, changes in drug related arrests, how opioids are being prescribed, and how increased availability of Naloxone may aid states in their quest to save lives. 
+
+
+***
+Opioid Death Rates
+=====================================
+#### This first series of visualizations looks at deaths caused by opioid overdose from several different angles: within the United States, across the globe, and by drug type. The techniques used in this series includes a <b>hexbin map</b>, a <b>line series</b> that was polished using <b>Inkscape</b>, and an <b>interactive line series</b> using the <b>plotly package</b>.
+<br /><br />
+<div class = "blue">
+
+<b>Visualization 1</b><br />This visualization uses a hexbin map to display death rates in the United States in 2019. By normalizing state shape and size and death rates per 100,000 individuals, this plot demonstrates some states are more severely impacted by the opiod epidemic than others.
+
+</div>
+```{r echo=FALSE,out.width="100%"}
+plotdata <-  us2019deathrates  %>% select(Area, DeathRate) 
+  
+## Map set up
+spdf@data = spdf@data %>%
+mutate(google_name = gsub(" \\(United States\\)", "", google_name))
+
+# 'fortify' the data to be able to show it with ggplot2 
+spdf@data = spdf@data %>% mutate(google_name = gsub(" \\(United States\\)", "", google_name))
+spdf_fortified <- tidy(spdf, region = "google_name")
+
+# Calculate the centroid of each hexagon to add the label:
+centers <- cbind.data.frame(data.frame(gCentroid(spdf, byid=TRUE), id=spdf@data$iso3166_2))
+
+# Merge geospatial and numerical information
+spdf_fortified <- spdf_fortified %>%
+  left_join(. , plotdata, by=c("id"="Area")) 
+
+spdf_fortified$bin <- cut( spdf_fortified$DeathRate , breaks=c(0,14,18,24.7,32,Inf), 
+                           labels=c("0-9", "10-19", "20-29", "30-39", "50+" ),
+                           include.lowest = TRUE )
+my_palette <- rev(magma(8))[c(-1,-8)]
+#my_palette <- c("#FDE725","#5DC863","#21908C","#31688E", "#440154")
+
+## plot time
+ggplot() +
+  geom_polygon(data = spdf_fortified, aes(fill = bin, x = long, y = lat, group = group) , size=0) +
+  geom_text(data=centers, aes(x=x, y=y, label=id), color="white", size=3) +
+  coord_map()+
+  theme_void() +
+  scale_fill_manual( 
+    values=my_palette, 
+    name="\nDeaths per 100,000 individuals", 
+    guide = guide_legend( keyheight = unit(3, units = "mm"), keywidth=unit(9, units = "mm"), label.position = "bottom", title.position = 'top', nrow=1) 
+  ) +
+  ggtitle( "Drug overdose deaths in 2019" ) +
+  labs(caption = "Data Source: Center for Disease Control") +
+  theme(
+    legend.position = c(0.5, 0.9),
+    text = element_text(color = "#22211d"),
+    plot.caption = element_text(size=8, hjust=0.15),
+    plot.title = element_text(size= 17, hjust=0.5, color = "#4e4d47")
+  )
+#,margin = margin(b = -0.1, t = 0.4, l = 2, unit = "cm")
+```
+
+***
+<div class = "blue">
+
+<b>Visualization 2</b><br />This visualization examines global death rates from opioid overdoses from 2000-2017. The figure was finalized in Inkscape.  The steep purple line demonstrates that the United States is experiencing a staggering amount of deaths per 100,000 individuals relative to both the world average, as well as every other country in the world. 
+
+</div><br />
+```{r message=FALSE,echo=FALSE,fig.show='hide'}
+
+colnames(global_data)<- c("Country","code", "Year", "DeathRate")
+global_data <-  global_data %>% filter(Year >=2000 & code!="VIR" & Country !="Zimbabwe") %>%  dplyr::select(Country,Year,DeathRate) 
+global_data <- global_data %>% 
+  mutate( highlight=ifelse(Country=="United States", "United States", ifelse(Country=="World", "World Average", "Other"))) %>%
+  arrange(desc(highlight))
+  
+global_data %>% 
+  ggplot( aes(x=Year, y=DeathRate, group=Country, color=highlight, size=highlight))+
+  geom_line() +
+  scale_color_manual(values = c("lightgrey", "#6a247f", "#13af70")) +
+  scale_size_manual(values=c(.4, 1.2, 1.3)) +
+  scale_x_continuous(breaks = seq(2000, 2017, by = 2)) +
+  theme_minimal()+
+  #scale_y_continuous(labels = comma, position = "right")+
+  #geom_label( x=2013, y=13, label="United States", size=3, color="#440154") +
+  #geom_label( x=2014, y=1.8, label="Global Average", size=3, color="#21908C") +
+  labs(title = "Global opioid death rates, 2000-2017",
+       subtitle= "Death rates are measured as the number of deaths per 100,000 individuals",
+       caption = "Data Source: Our World in Data", 
+       x="", y="") +
+  theme(plot.caption = element_text(size=8),
+        plot.title = element_text(size= 17, color = "#4e4d47"),
+        plot.subtitle = element_text(size= 10, color = "#4e4d47"),
+        legend.position="Default",
+        panel.grid.minor.x=element_blank(),
+        panel.grid.major.x=element_blank(),
+        panel.grid.major.y=element_blank(),
+        panel.grid.minor.y=element_blank(),
+        axis.ticks.x=element_blank(),
+        axis.text.y=element_blank()
+  ) 
+
+```
+<center>
+![](Rplot.png)
+</center>
+***
+<div class = "blue">
+
+<b>Visualization 3</b><br />This interactive visualization looks at the number of deaths caused by opioid overdose from 2004-2019, by drug type. This graph demonstrates that since 2104, Fentanyl and other synthetic opioids are increasing at an alarming rate relative to other drug types. 
+</div>
+<br />
+```{r exercise3,echo=FALSE,out.width="100%"}
+colnames(opiodTypes)<- c("Year","NaturalSemi", "Synthetic", "Methadone", "Heroin")
+
+
+natural_series<-opiodTypes %>% select("Year", `deaths`="NaturalSemi")
+natural_series$Type="NaturalSemi"
+
+synthetic_series<-opiodTypes %>% select("Year",`deaths`="Synthetic")
+synthetic_series$Type="Synthetics"
+
+methadone_series<-opiodTypes %>% select("Year", `deaths`="Methadone")
+methadone_series$Type="Methadone"
+
+heroin_series<-opiodTypes %>% select("Year",`deaths`="Heroin")
+heroin_series$Type="Heroin"
+
+
+myseries <- bind_rows(natural_series,synthetic_series,methadone_series,heroin_series)
+
+
+viz3 <- ggplot(myseries,(aes(x=Year,y=deaths,
+                          group=Type,color=Type, 
+                          text=paste0("Year: ", Year, "<br />Deaths: ",scales::comma(deaths, 1)))))+
+  geom_line(size=1.5)+
+  scale_color_manual(values=c("#5DC863","#FDE725","#346a8f", "#440154")) +
+  theme_minimal()+
+  scale_y_continuous(labels = scales::comma) +
+  scale_x_continuous(breaks = seq(2004, 2019, by = 2)) +
+  #scale_y_continuous(labels = comma, position = "right")+
+  labs(x="",y="", title="Number of opioid deaths by drug type",
+       caption="Data source: Kaiser Family Foundation (KFF)")+
+  theme(plot.caption = element_text(size=8),
+        plot.title = element_text(size= 17, color = "#4e4d47"),
+        legend.position="Default",
+        panel.grid.major.x=element_blank(),
+        axis.ticks.x=element_blank() 
+
+  ) 
+
+a <- list(
+  x=2013, y=27000,
+  text = "Fentanyl and synthetic opioids",
+  xref = "x",
+  yref = "y",
+  showarrow = FALSE,
+  font=list(size=21, color="#440154")
+)
+
+b <- list(
+  x=2011, y=13500,
+  text = "Prescription opioids",
+  xref = "x",
+  yref = "y",
+  showarrow = FALSE,
+  font=list(size=21, color="#346a8f")
+)
+
+c <- list(
+  x=2016, y=5400,
+  text = "Methadone",
+  xref = "x",
+  yref = "y",
+  showarrow = FALSE,
+  font=list(size=21, color="#FDE725")
+)
+
+d <- list(
+  x=2017.5, y=17500,
+  text = "Heroin",
+  xref = "x",
+  yref = "y",
+  showarrow = FALSE,
+  font=list(size=21, color="#5DC863")
+)
+
+fig2 <- ggplotly(viz3, tooltip="text")
+fig2 <- fig2 %>% layout(showlegend = FALSE,
+                        annotations = list(a,b,c,d),
+                        title = list(text = paste0('Number of opioid deaths by drug type, 2004-2019','<br>','<sup>','Data source: Kaiser Family Foundation (KFF)','</sup>')))
+fig2
+
+```
+
+***
+Demographic Impact
+=====================================
+#### The next series of visualizations looks at how different populations are impacted by the opioid epidemic within the United States. The techniques used in this series includes a <b>boxplot</b>, a series of <b>slope graphs</b> including a <b>facet wrap</b>, and two <b>waffle charts</b>.
+<br /><br />
+<div class = "blue">
+
+<b>Visualization 4</b><br />This box plot shows the distribution of opioid deaths by age group across 50 states in 2018. From this figure, it is clear to see which age groups are most at risk.
+
+</div><br />
+```{r echo=FALSE,out.width="100%"}
+colnames(DistributionByAge)<- c("State", "0-24", "25-34", "35-44", "45-54", "55+")
+DistributionByAge <- melt(cbind(rownames(DistributionByAge),DistributionByAge))
+colnames(DistributionByAge)<- c("row","State", "age", "deaths")
+DistributionByAge <- DistributionByAge  %>% select("State", "age", "deaths")
+
+ggplot() +
+  geom_boxplot(
+    data = DistributionByAge,
+    mapping = aes(x=age, y=deaths, fill=age, color=age)
+  ) +
+  scale_fill_viridis(discrete=TRUE, alpha=.8) +
+  scale_color_viridis(discrete=TRUE) +
+  #theme_minimal()+
+  labs(title = "Deaths from drug overdoses in the U.S., by age group",
+       subtitle="Timeframe: 2018\n",
+       caption = "\nData Source: Kaiser Family Foundation (KFF) and the Centers for Disease Control and Prevention (CDC)", 
+       x="Age Group", y="Deaths") +
+  theme(plot.caption = element_text(size=8, hjust=0)) +
+  theme(plot.title = element_text(size= 17, color = "#4e4d47")) +
+  theme(plot.subtitle = element_text(size= 14, color = "#4e4d47")) +
+  theme(legend.position="Default")+
+  theme(legend.title  = element_text(size=8))+
+  theme(legend.text = element_text(size=7))+
+  theme(panel.grid.major.x=element_blank()) +
+  theme(panel.grid.minor=element_blank()) 
+  #theme(panel.grid.major=element_blank()) +
+  #theme(panel.grid.minor=element_blank())
+```
+
+***
+<br /><br />
+<div class = "blue">
+
+<b>Visualization 5</b><br />As noted in Visualization 2, synthetic opioids like Fentanyl have become especially problematic since 2014 in the United States.  These slope graphs examine the percentage of opioid-involved overdose deaths that were caused by synthetic opioids. This data looks at adults in the U.S. from 2015 relative to 2017. The data is displayed with each each color line segment representing a different race: Black, Hispanic and White. A facet wrap of urbanization level was also made. These figures demonstrate that the percentage of synthetic opioid overdoses related to all overdose deaths have significantly increased in each race category and each urbanization level in a very short time.
+
+</div><br />
+```{r echo=FALSE, out.width="100%"}
+ggplot(data = urbanizationopioid, aes(x = Year, y = Value, group = Race)) +
+  geom_line(aes(color = Race), size = 1) +
+  geom_point(aes(color = Race), size = 1) +
+  scale_color_viridis(discrete = TRUE) +
+  facet_wrap(~Urbanization) +
+  geom_text_repel(data = urbanizationopioid %>% filter(Year == "2015"), 
+                  aes(label = paste0(Race, ", ", round(Value,0), "%")) , 
+                  hjust = "left", 
+                  fontface = "bold", 
+                  size = 3, 
+                  nudge_x = -2, 
+                  nudge_y = 2,
+                  direction = "y") +
+  geom_text_repel(data = urbanizationopioid %>% filter(Year == "2017"), 
+                  aes(label = paste0(round(Value,0),"%")) , 
+                  hjust = "right", 
+                  fontface = "bold", 
+                  size = 3, 
+                  nudge_x = .7,
+                  nudge_y = 1,
+                  direction = "y") +
+  labs(title = "Percentage of opioid-involved overdose deaths involving \nsynthetic opioids, by urbanization level and race",
+       subtitle="\nTimeframe: 2015 vs. 2017",
+       caption = "Data Source: National Vital Statistics System, United States", 
+       x = "", y = "") +
+  #theme_minimal() +
+  expand_limits(y=c(15,77)) +
+  geom_vline(xintercept=2015, linetype="longdash")+
+  geom_vline(xintercept=2017, linetype="longdash")+
+  #geom_text(x=2014.5, y=10, size=3, label="2015")+
+  #geom_text(x=2017.5, y=10, size=3, label="2017")+
+  expand_limits(x=c(2013,2018))+
+  theme(legend.position="default",
+        plot.caption = element_text(size=8,hjust=0),
+        plot.title = element_text(size= 17, color = "#4e4d47"),
+        plot.subtitle = element_text(size= 14, color = "#4e4d47"),
+        panel.grid.major.x=element_blank(),
+        panel.grid.minor.x=element_blank(),
+        panel.grid.major.y=element_blank(),
+        panel.grid.minor.y=element_blank(),
+        axis.text.y=element_blank(),
+        axis.ticks.y=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank()
+  )  
+  
+
+
+```
+
+
+***
+<br />
+<div class = "blue">
+<b>Visualization 6</b><br />
+These figures demonstrate the percentage breakdown of drug overdose deaths in the United States by gender and race in 2018.
+
+</div>
+
+### Breakdown of overdose deaths in the U.S. in 2018, by gender and race 
+<br />
+```{r, fig.show="hold", out.width="50%", echo=FALSE,fig.cap="Data Source: Kaiser Family Foundation (KFF) and the Centers for Disease Control and Prevention (CDC)"}
+
+#https://www.kff.org/other/state-indicator/opioid-overdose-deaths-by-gender/
+male05 <- (18724/29813)*100
+female05 <- (11089/29813)*100
+
+male18 <- (44941/67367)*100
+female18 <- (22426/67367)*100
+
+race <- c(`White (72%)`=72, `Black (15%)`=15, 
+                     `Hispanic (11%)`=11, `Other (2%)`=2)
+
+waffle(c(`Male - 74%` = 74,`Female - 26%` = 26), rows = 10, flip=TRUE,
+  colors = c("#440154", "#35B779"), legend_pos = "bottom", title="Gender") 
+
+waffle(race, rows = 10, flip=TRUE, colors=viridis(n=4), legend_pos = "bottom", title="Race")
+
+```
+
+
+***
+Drug Related Arrests
+=====================================
+The next series of visualizations looks at drug related arrests in the United States from two angles: posessions and distribution (sales and manufacturing). The techniques used in this series includes side-by-side <b>bar charts</b>.
+<br /><br />
+<div class = "blue">
+<b>Visualization 7-8</b><br />These plots enable the audience to see the shifts that have taken place between 2010 and 2019 with arrests by drug category and arrest type. Despite the growing damage caused by sythetic or manufactured drugs like Fentanyl, arrests in both arrest categories (posession and sales/manufacturing) have remain mostly unchanged.  Meanwhile, it is easy to how changes in legislation have impacted Marijuana arrests.<br />
+</div>
+<br />
+```{r echo=FALSE, warning=FALSE, message=FALSE, out.width="100%"}
+#arrests <-subset(drugarrests, subset = ((Year=="2010" | Year=='2019') & drugarrests$Type=='Posession'))
+
+arrests <- drugarrests %>% filter((Year=="2010" | Year=='2019') & drugarrests$Type=='Posession') %>% arrange(desc(Arrests))
+
+arrests$Drug <- factor(arrests$Drug,levels = c("Synthetic or manufactured drugs", "Other dangerous nonnarcotic drugs", "Heroin or cocaine and their derivatives", "Marijuana"))
+
+
+ggplot(arrests, aes(fill=Drug, y=Arrests, x=Year)) + 
+  geom_bar(position="dodge", stat="identity") +
+  scale_y_continuous(labels = scales::comma) +
+  scale_fill_viridis(discrete = T,direction=-1, name="") +
+  scale_x_continuous(breaks = seq(2010, 2019, by = 9))+
+  #facet_wrap(~Drug) +
+  labs(title = "Possession drug arrests, by drug category",
+       subtitle="Timeframe: 2010 vs. 2019",
+       caption = "\nData Source: FBI Uniform Crime Reporting Program", 
+       x = "", y = "Number of Arrests") +
+  theme_minimal() +
+  theme(legend.position="bottom",
+        legend.box.background = element_rect(),
+        legend.text = element_text(size=6),
+        legend.title  = element_text(size=8),
+        plot.caption = element_text(size=8,hjust=0),
+        plot.title = element_text(size= 17, color = "#4e4d47"),
+        plot.subtitle = element_text(size= 14, color = "#4e4d47"),
+        panel.grid.major.x=element_blank(),
+        #axis.text.x=element_blank(),
+        #panel.grid.major.y=element_blank(),
+        #panel.grid.minor.y=element_blank(),
+        axis.ticks.x=element_blank()
+  ) 
+
+
+```
+
+***
+
+<br />
+```{r echo=FALSE, warning=FALSE, message=FALSE, out.width="100%"}
+
+arrests <- drugarrests %>% filter((Year=="2010" | Year=='2019') & drugarrests$Type=='Sales') %>% arrange(desc(Arrests))
+
+arrests$Drug <- factor(arrests$Drug,levels = c("Synthetic or manufactured drugs", "Other dangerous nonnarcotic drugs", "Heroin or cocaine and their derivatives", "Marijuana"))
+
+
+ggplot(arrests, aes(fill=Drug, y=Arrests, x=Year)) + 
+  geom_bar(position="dodge", stat="identity") +
+  scale_y_continuous(labels = scales::comma) +
+  scale_fill_viridis(discrete = T,direction=-1, name="") +
+  scale_x_continuous(breaks = seq(2010, 2019, by = 9))+
+  #facet_wrap(~Drug) +
+  labs(title = "Sales or manufacturing drug arrests, by drug category",
+       subtitle="Timeframe: 2010 vs. 2019",
+       caption = "\nData Source: FBI Uniform Crime Reporting Program", 
+       x = "", y = "Number of Arrests") +
+  theme_minimal() +
+  theme(legend.position="bottom",
+        legend.box.background = element_rect(),
+        legend.text = element_text(size=6),
+        legend.title  = element_text(size=8),
+        plot.caption = element_text(size=8,hjust=0),
+        plot.title = element_text(size= 17, color = "#4e4d47"),
+        plot.subtitle = element_text(size= 14, color = "#4e4d47"),
+        panel.grid.major.x=element_blank(),
+        #axis.text.x=element_blank(),
+        #panel.grid.major.y=element_blank(),
+        #panel.grid.minor.y=element_blank(),
+        axis.ticks.x=element_blank()
+  ) 
+
+
+```
+
+***
+Prescriber Data
+=====================================
+####The next series of visualizations looks at how opioids are being prescribed in the United States. The techniques used in this series includes a <b>treemap</b> and a <b>heatmap</b>.
+<br />
+<div class = "blue">
+<b>Visualization 9</b><br />
+The treemap visualization technique used below demonstrates which medical practices are making the most opioid prescriptions in the United States.  
+</div>
+### Practices prescribing the most opioids
+```{r echo=FALSE, fig.cap="Data Source: Medicaid.gov and ProPublica"}
+treemapdata <- read.csv("~/Downloads/Treemap Data_Full Data.csv")
+
+treemapdata <- treemapdata %>% 
+  group_by(Specialty) %>%
+  summarise(claim_sum=sum(OpioidClaim))
+
+ggplot(treemapdata,aes(area = claim_sum, 
+                       label = paste0(Specialty, "\nOpioid Claims: ", scales::comma(claim_sum)))) +
+  geom_treemap(aes(fill=claim_sum)) +
+  geom_treemap_text(colour = "white", place = "topleft", reflow = T, size = 12) +
+  theme(legend.position = 'none')
+
+```
+
+***
+<div class = "blue">
+<b>Visualization 10</b><br />
+Fentanyl is a powerful synthetic opioid, similar to heroin, that is often prescribed for severe pain. Fentanyl and fentanyl analogs are being detected increasingly in overdose deaths. While many of these deaths are attributed to illicitly-produced fentanyl, it is worthwhile to examine how these drugs are being prescribed.  
+<br />
+For this graph, I was interested in creating a heat map to visualize which specialities or practices are prescribing the most Fentanyl in United States. To improve readability, I recoded states into regions of the country and filtered my data for Fentanyl prescribers.  From there, I created a subset by specialty/practice to pull only the top ten practice types.  
+
+</div>
+<br />
+```{r echo=FALSE,out.width="100%"}
+level_key <- c(`ME`="Northeast", `MA`="Northeast", `RI`="Northeast", `CT`="Northeast", 
+               `NH`="Northeast", `VT`="Northeast", `NY`="Northeast", `PA`="Northeast", `NJ`="Northeast", 
+               `MD`="Northeast", `DE`="Northeast", `VA`="Southeast", `KY`="Southeast", `TN`="Southeast", 
+               `NC`="Southeast", `SC`="Southeast", `GA`="Southeast", `AL`="Southeast", 
+               `AR`="Southeast", `FL`="Southeast", `LA`="Southeast", `MS`="Southeast", `WV`="Southeast",
+               `OH`="Midwest", `IN`="Midwest", `MI`="Midwest", `IL`="Southeast", `MO`="Midwest", `WI`="Midwest", 
+               `MN`="Midwest", `IA`="Midwest", `KS`="Midwest", `NE`="Midwest", `SD`="Midwest", `ND`="Midwest",
+               `TX`="Southwest", `OK`="Southwest", `NM`="Southwest", `AZ`="Southwest",
+               `CO`="West", `WY`="West", `MT`="West", `ID`="West", `WA`="West", `OR`="West", 
+               `UT`="West", `CA`="West", `AK`="West", `HI`="West", `NV`="West")
+rec_region <- recode(prescriber.info$State, !!!level_key)
+prescriber.info$Region <- rec_region
+
+#dataset <- prescriber.info  %>% filter(OXYCODONE.ACETAMINOPHEN>0 & State !="PR" & State !="VI") %>% 
+ # select(Region, Specialty, OXYCODONE.ACETAMINOPHEN)  %>% 
+  #group_by(Region, Specialty) %>% 
+  #summarise(FENTANYL=sum(FENTANYL)) %>% 
+  #arrange(Region,Specialty)
+
+dataset <- prescriber.info  %>% filter(FENTANYL>0 & State !="PR" & State !="VI") %>% 
+  select(Region, Specialty, FENTANYL)  %>% 
+  group_by(Region, Specialty) %>% 
+  summarise(FENTANYL=sum(FENTANYL)) %>% 
+  arrange(Region,Specialty)
+
+specialty_subset <- dataset %>% select("Specialty","FENTANYL")%>% 
+  group_by(Specialty) %>% 
+  summarise(FENTANYL=sum(FENTANYL)) %>%
+  arrange(desc(FENTANYL))
+
+specialty_subset <- specialty_subset[1:10, ]
+
+plotdata <- dataset %>%
+  filter(Specialty %in% specialty_subset$Specialty) %>%
+  arrange(desc(FENTANYL),Specialty)
+
+colnames(plotdata)<- c("Region","Specialty", "Prescriptions")
+
+plotdata <- arrange(plotdata,Region)
+plotdata$Specialty <- with(plotdata,factor(Specialty,levels = rev(sort(unique(Specialty)))))
+
+plotdata$Region <- factor(plotdata$Region,levels = c("Northeast", "Southeast", "Midwest", "Southwest", "West"))
+
+p <- ggplot(plotdata, aes(y=Specialty, x=Region, fill=Prescriptions)) + 
+  geom_tile()+
+  #geom_label(aes(label =scales::comma(Prescriptions)), color="white", label.size = NA, size=2)+
+  theme_minimal() + 
+  scale_fill_distiller(palette = "BuPu", direction = 1, labels = c(0, "2k", "4k", "6k", "8k")) +
+  labs(title = "Who is prescribing the most Fentanyl?",
+       subtitle = "Top 10 Practice types by U.S. region",
+       caption = "Data Source: Kaggle.com U.S. Opiate Prescriptions", 
+       x="", y="") +
+  theme(plot.caption = element_text(size=8,hjust=0)) +
+  theme(plot.title = element_text(size= 17, color = "#4e4d47")) +
+  theme(plot.subtitle = element_text(size= 14, color = "#4e4d47")) +
+ # theme(legend.position="bottom")+
+  theme(legend.title  = element_text(size=8))+
+  theme(legend.text = element_text(size=7))+
+  theme(panel.grid.major=element_blank()) +
+  theme(panel.grid.minor=element_blank()) 
+
+p
+#fig3 <- ggplotly(p, tooltip="Prescriptions")
+#fig3 <- fig3 %>% layout(title = list(text = paste0('Who is prescribing the most opioids? Top 10 Practice types by state','</sup>','<br>','<sup>','Data Source: Kaggle.com U.S. Opiate Prescriptions','</sup>')))
+#fig3
+```
+
+***
+Naloxone Interventions
+=====================================
+####From 2016 to 2017, the state of Massachusetts saw a decrease in the overall number of deaths from drug overdoses.  Two counties however, Worcester and Barnstable, still saw an uptick in the number of opioid overdose deaths.  The decrease in deaths year-over-year has been attributed to an increased availability of naloxone, a drug that can reverse an opioid overdose. To display the data, I opted with a <b>geom_segment</b> with an arrow to represent the changes that took place (rather than *geom_dumbell*), color coded and labeled my data based on year, sorted the counties by the percent change year-over-year, and added a data column to display the percent change year-over-year.
+<div class = "blue">
+<b>Visualization 11</b><br />
+The figure below demonstrates the shifts in the number of drug overdose deaths that took place from 2016 to 2017 by county. This was accomplished by filtering my data for the appropriate state and years.  I applied the *'pivot_wider'* function to format the data.  A new column was calculated to show the percent increase/decrease that took place for each county.  
+</div>
+<br />
+```{r echo=FALSE,out.width="100%"}
+ma.data <- ma.data  %>% filter(State =="Massachusetts" & Year > 2015)%>%select("County", "Year", "Total")
+colnames(ma.data)<- c("County", "Year", "Deaths")
+ma.data <- drop_na(ma.data)
+ma.data <- ma.data[order(ma.data$County,ma.data$Year),]
+
+ma.data<- ma.data %>% pivot_wider(names_from = Year,values_from=Deaths)%>%
+  rename(year1=`2016`,year2=`2017`)
+
+ma.data$diff <- ma.data$year2 - ma.data$year1
+ma.data$perc_change <- (ma.data$diff/ma.data$year1) *100
+# we want to keep the order in the plot, so we use a factor for County
+ma.data <- arrange(ma.data,perc_change)
+ma.data$County <- factor(ma.data$County, levels=rev(ma.data$County))
+
+
+ggplot(
+  ma.data,
+  aes(y=County, yend=County,
+      x=year1, xend=year2))+ 
+  geom_segment(aes(y=County, yend=County, x=year1, xend=year2),
+               color=(ifelse(ma.data$diff<0, "#440154","#13af70" )),
+               size=1, lineend="round",linejoin="round",
+               arrow=arrow(length = unit(0.015, "npc"), type="closed")) +
+  #adding the text label for year values
+  geom_text(data=filter(ma.data, County=="Norfolk"),
+            aes(x=106, y=County, label="2016"),
+            color="#440154", size=3.5, vjust=-3, fontface="bold") +
+  geom_text(data=filter(ma.data, County=="Norfolk"),
+            aes(x=54, y=County, label="2017"),
+            color="#13af70", size=3.5, vjust=-3, fontface="bold") +
+  #adding the text labels for death count values 
+  geom_text(data=ma.data, aes(x=year2, y=County, label=year2),
+            fontface="bold", color="#13af70", size=3.1, nudge_x=(ifelse(ma.data$diff<0, -5.8, 5.8 ))) +
+  geom_text(data=ma.data, aes(x=year1, y=County, label=year1),
+            fontface="bold", color="#440154", size=3.1, nudge_x=(ifelse(ma.data$diff>0, -5.8, 5.8 ))) +
+  #creating a rectangle to show the YOY percent change
+  geom_rect(data=ma.data, aes(xmin=170, xmax=197, ymin=0, ymax=Inf), fill="#efefe3") +
+  geom_text(data=ma.data, aes(label=round(perc_change, digits = 0), y=County, x=185), 
+            fontface="bold", size=3) +
+  geom_text(data=filter(ma.data, County=="Norfolk"), aes(x=183, y=County, label="% Change"),
+            size=3, vjust=-3, fontface="bold") +
+  scale_x_continuous(expand=c(0,0), limits=c(0, 197)) +
+  scale_y_discrete(expand=c(0.09,.9)) +
+  theme_minimal() + 
+  labs(title = "Shift in the number of drug overdose deaths by county",
+       subtitle="State of Massachusetts\n",
+       caption = "Data Source: Kaggle.com Opioid Epidemic Analysis by U.S. County", 
+       x="", y="") +
+  theme(plot.caption = element_text(size=8, color = "#4e4d47",hjust=0)) +
+  theme(plot.title = element_text(size= 17, color = "#4e4d47")) +
+  theme(plot.subtitle = element_text(size= 14, color = "#4e4d47")) +
+  theme(panel.grid.major.x=element_blank()) +
+  theme(panel.grid.minor.x=element_blank()) +
+  theme(axis.ticks.x=element_blank()) +
+  theme(axis.text.x=element_blank()) +
+  theme(axis.text.y=element_text(color="black"))
+
+
+```
+
+
+
